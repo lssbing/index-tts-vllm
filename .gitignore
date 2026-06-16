@@ -16,3 +16,5 @@ checkpoints/*
 output.wav
 
 logs/
+
+cloned_voices/
