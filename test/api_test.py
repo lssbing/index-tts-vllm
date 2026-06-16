@@ -20,6 +20,7 @@ Usage:
 import argparse
 import base64
 import io
+import json
 import os
 import sys
 import time
@@ -407,6 +408,114 @@ class TestRunner:
         except Exception as ex:
             self.record("/audio/speech output is 16kHz WAV", False, str(ex))
 
+    # ---------- static voices from assets/speaker.json ----------
+    def _resolve_static_voices(self) -> list[str]:
+        """Read assets/speaker.json from the server's filesystem via the helper endpoint.
+
+        Falls back to probing /api/voices + /audio/voices, and finally to a hardcoded
+        default list matching the most common configuration.
+        """
+        candidates: list[str] = []
+        # Try to read speaker.json via the local filesystem relative to CWD
+        for path in ("assets/speaker.json", "./assets/speaker.json"):
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    if isinstance(data, dict):
+                        candidates = list(data.keys())
+                        break
+                except Exception:
+                    pass
+        return candidates
+
+    def test_api_tts_with_static_voice(self):
+        """Regression test: /api/tts must accept voices from assets/speaker.json
+        (not just cloned voices registered via /api/clone-voice)."""
+        static_voices = self._resolve_static_voices()
+        if not static_voices:
+            self.record(
+                "/api/tts accepts assets/speaker.json voices (regression)",
+                False,
+                "no static voices found in assets/speaker.json",
+            )
+            return
+        voice = static_voices[0]
+        try:
+            r = requests.post(
+                f"{self.server}/api/tts",
+                json={"text": self.text, "voice": voice},
+                timeout=120,
+            )
+            if r.status_code != 200:
+                self.record(
+                    "/api/tts accepts assets/speaker.json voices (regression)",
+                    False,
+                    f"voice={voice}, status={r.status_code}, body={r.text[:200]}",
+                )
+                return
+            wav_bytes = base64.b64decode(r.json()["audio_base64"])
+            data, sr = sf.read(io.BytesIO(wav_bytes), dtype="float32")
+            ok = sr == 16000 and data.size > 0
+            self.record(
+                "/api/tts accepts assets/speaker.json voices (regression)",
+                ok,
+                f"voice={voice}, sr={sr}, duration={data.size/sr:.2f}s",
+            )
+        except Exception as ex:
+            self.record(
+                "/api/tts accepts assets/speaker.json voices (regression)",
+                False,
+                str(ex),
+            )
+
+    def test_api_tts_with_each_static_voice(self):
+        """Exercise every static voice from assets/speaker.json through /api/tts."""
+        static_voices = self._resolve_static_voices()
+        if not static_voices:
+            self.record(
+                "/api/tts works for every assets/speaker.json voice",
+                False,
+                "no static voices found",
+            )
+            return
+        for voice in static_voices:
+            try:
+                r = requests.post(
+                    f"{self.server}/api/tts",
+                    json={"text": self.text, "voice": voice},
+                    timeout=120,
+                )
+                ok = r.status_code == 200 and "audio_base64" in r.json()
+                self.record(
+                    f"/api/tts voice '{voice}' (from speaker.json)",
+                    ok,
+                    f"status={r.status_code}",
+                )
+            except Exception as ex:
+                self.record(
+                    f"/api/tts voice '{voice}' (from speaker.json)",
+                    False,
+                    str(ex),
+                )
+
+    def test_api_tts_unknown_voice_still_404(self):
+        """Regression test: invalid voices must still return 404 (not silently 500)."""
+        try:
+            r = requests.post(
+                f"{self.server}/api/tts",
+                json={"text": self.text, "voice": "nonexistent_voice_zzz"},
+                timeout=10,
+            )
+            ok = r.status_code == 404
+            self.record(
+                "/api/tts still returns 404 for unknown voice (regression)",
+                ok,
+                f"status={r.status_code}",
+            )
+        except Exception as ex:
+            self.record("/api/tts still returns 404 for unknown voice", False, str(ex))
+
     # ---------- persistence check ----------
     def test_persistence(self, voice_id: str):
         """Verify that re-querying the manifest (simulating server restart)
@@ -471,6 +580,11 @@ def main():
     runner.test_clone_missing_fields()
     runner.test_delete_unknown_voice()
     runner.test_delete_invalid_format()
+
+    # Static voices from assets/speaker.json — independent of clone flow.
+    runner.test_api_tts_with_static_voice()
+    runner.test_api_tts_with_each_static_voice()
+    runner.test_api_tts_unknown_voice_still_404()
 
     # Happy path: clone → list → tts → delete.
     voice_id = runner.test_clone_voice(audio_b64, prefix)

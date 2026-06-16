@@ -571,10 +571,20 @@ async def api_tts(request: Request):
 
     manifest = _load_manifest()
     entry = next((e for e in manifest if e["voice_id"] == voice_id), None)
-    if entry is None:
-        return JSONResponse(status_code=404, content={"status": "error", "error": f"voice_id '{voice_id}' not found"})
-    if entry.get("status") == "failed":
-        return JSONResponse(status_code=425, content={"status": "error", "error": f"voice_id '{voice_id}' is in failed state"})
+    if entry is not None:
+        # Cloned voice — apply the manifest-level failure check
+        if entry.get("status") == "failed":
+            return JSONResponse(
+                status_code=425,
+                content={"status": "error", "error": f"voice_id '{voice_id}' is in failed state"},
+            )
+    else:
+        # Not in the cloned manifest — fall back to static voices from assets/speaker.json
+        if not _validate_voice_id(voice_id):
+            return JSONResponse(
+                status_code=404,
+                content={"status": "error", "error": f"voice '{voice_id}' not found"},
+            )
 
     rate = _resolve_speed_or_rate(data, prefer_speed=False)
     volume = _resolve_volume(data)
