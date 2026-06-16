@@ -2,5 +2,20 @@
     "jay_klee": [
         "assets/jay_promptvn.wav",
         "assets/vo_card_klee_endOfGame_fail_01.wav"
+    ],
+    "longyumi": [
+        "assets/longyumi.mp3"
+    ],
+    "longxiaoxia": [
+        "assets/longxiaoxia.mp3"
+    ],
+    "longxiaochun_v2": [
+        "assets/longxiaochun_v2.mp3"
+    ],
+    "longanlang": [
+        "assets/longanlang.mp3"
+    ],
+    "longshu_v2": [
+        "assets/longshu_v2.mp3"
     ]
 }

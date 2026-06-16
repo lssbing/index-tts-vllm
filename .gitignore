@@ -17,4 +17,5 @@ output.wav
 
 logs/
 
-cloned_voices/
+# Ignore WSL/NTFS alternate data stream metadata (e.g. assets/foo.mp3:Zone.Identifier)
+*:Zone.Identifier
